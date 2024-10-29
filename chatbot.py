@@ -1,4 +1,6 @@
-from transformers import pipeline # type: ignore
+import torch # type: ignore
+from transformers import BertTokenizer, BertModel # type: ignore
+
 import boto3 # type: ignore
 from sklearn.metrics.pairwise import cosine_similarity # type: ignore
 import numpy as np
@@ -21,7 +23,10 @@ from pathlib import Path
 from dotenv import load_dotenv # type: ignore
 
 
-embedding_model = pipeline("feature-extraction", model='bert-base-uncased')
+
+tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+model = BertModel.from_pretrained('bert-base-uncased')
+
 
 load_dotenv()
 
@@ -50,12 +55,12 @@ def load_training_data():
     return questions_answers
 
 def get_embedding(text):
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=512)
+    with torch.no_grad():
+        outputs = model(**inputs)
+    return outputs.last_hidden_state[:, 0, :].numpy()
 
-        # Get the embeddings for the input text
-    outputs = embedding_model(text)
-    
-    # Return the embeddings as a NumPy array (first element corresponds to the input)
-    return outputs[0][0]  # Adjust index if necessary
+
     
 def get_response(user_input, chat_link, questions_answers=load_training_data()):
     user_embedding = get_embedding(user_input)
