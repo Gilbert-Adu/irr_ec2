@@ -1,5 +1,4 @@
-import torch # type: ignore
-from transformers import BertTokenizer, BertModel # type: ignore
+from transformers import AutoTokenizer, TFAutoModel # type: ignore
 import boto3 # type: ignore
 from sklearn.metrics.pairwise import cosine_similarity # type: ignore
 import numpy as np
@@ -21,8 +20,10 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv # type: ignore
 
-tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-model = BertModel.from_pretrained('bert-base-uncased')
+
+tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+model = TFAutoModel.from_pretrained('bert-base-uncased')
+
 
 load_dotenv()
 
@@ -52,11 +53,16 @@ def load_training_data():
 
 def get_embedding(text):
 
-    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=512)
-    with torch.no_grad():
-        outputs = model(**inputs)
+    # Tokenize the input text
+    inputs = tokenizer(text, return_tensors="tf", truncation=True, padding=True, max_length=512)
+    
+    # Get the model outputs without gradients
+    outputs = model(**inputs)
+    
+    # Return the embeddings as a NumPy array
     return outputs.last_hidden_state[:, 0, :].numpy()
 
+    
 def get_response(user_input, chat_link, questions_answers=load_training_data()):
     user_embedding = get_embedding(user_input)
     best_match = None
