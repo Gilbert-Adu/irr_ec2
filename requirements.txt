@@ -1,0 +1,12 @@
+selenium
+flask
+webdriver-manager
+flask_cors
+requests
+torch
+transformers
+boto3
+scikit-learn
+numpy
+beautifulsoup4
+python-dotenv
