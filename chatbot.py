@@ -21,7 +21,7 @@ from pathlib import Path
 from dotenv import load_dotenv # type: ignore
 
 
-embedding_model = pipeline("feature-extraction", model='model_name')
+embedding_model = pipeline("feature-extraction", model='bert-base-uncased')
 
 load_dotenv()
 
