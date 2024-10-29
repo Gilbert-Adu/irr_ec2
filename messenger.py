@@ -1,4 +1,3 @@
-import torch # type: ignore
 from transformers import BertTokenizer, BertModel # type: ignore
 import boto3 # type: ignore
 from sklearn.metrics.pairwise import cosine_similarity # type: ignore
