@@ -1,4 +1,4 @@
-from transformers import AutoTokenizer, TFAutoModel # type: ignore
+from transformers import pipeline # type: ignore
 import boto3 # type: ignore
 from sklearn.metrics.pairwise import cosine_similarity # type: ignore
 import numpy as np
@@ -21,9 +21,7 @@ from pathlib import Path
 from dotenv import load_dotenv # type: ignore
 
 
-tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
-model = TFAutoModel.from_pretrained('bert-base-uncased')
-
+embedding_model = pipeline("feature-extraction", model='model_name')
 
 load_dotenv()
 
@@ -53,15 +51,11 @@ def load_training_data():
 
 def get_embedding(text):
 
-    # Tokenize the input text
-    inputs = tokenizer(text, return_tensors="tf", truncation=True, padding=True, max_length=512)
+        # Get the embeddings for the input text
+    outputs = embedding_model(text)
     
-    # Get the model outputs without gradients
-    outputs = model(**inputs)
-    
-    # Return the embeddings as a NumPy array
-    return outputs.last_hidden_state[:, 0, :].numpy()
-
+    # Return the embeddings as a NumPy array (first element corresponds to the input)
+    return outputs[0][0]  # Adjust index if necessary
     
 def get_response(user_input, chat_link, questions_answers=load_training_data()):
     user_embedding = get_embedding(user_input)

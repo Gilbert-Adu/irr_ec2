@@ -83,6 +83,7 @@ def scraper_helper(driver, query, minPrice, maxPrice, taskUrl):
 
         listings = soup.find_all('div', class_='x9f619 x78zum5 x1r8uery xdt5ytf x1iyjqo2 xs83m0k x1e558r4 x150jy0e x1iorvi4 xjkvuk6 xnpuxes x291uyu x1uepa24')
 
+        #change to all listings
         for i in range(len(listings)):
             title = listings[i].find('span', class_='x1lliihq x6ikm8r x10wlt62 x1n2onr6')
             title = title.get_text()
