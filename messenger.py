@@ -237,6 +237,7 @@ def message_clients_helper(driver):
 
                         #now update the recent message of that chat
                         #if we can find the current chat item in the DB, we update the most recent message
+
                         if len(currentChat['Item']) == 1:
                             messagesTable.update_item(
                                 Key={'product_url': URL},
@@ -244,6 +245,8 @@ def message_clients_helper(driver):
                                 ExpressionAttributeValues={':val': recent_message}
                             )
                             print("updated the message in the DB")
+                            check_convo_end(texts[-1], temp, messenger_link)
+
                         #else we create a new chat in the DB 
                         else:
                             messagesTable.put_item(
@@ -256,7 +259,6 @@ def message_clients_helper(driver):
                 
                             )
                 #here
-                check_convo_end(texts[-1], temp, messenger_link)
             time.sleep(5 * 60)
                 
         except Exception as e:
