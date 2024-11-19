@@ -11,6 +11,7 @@ from io import StringIO
 import csv
 from chatbot import get_response
 import random
+from misc import get_all_listings
 
 
 
@@ -81,12 +82,41 @@ csv_content = response['Body'].read().decode('utf-8')
 cookies = []
 csv_reader = csv.DictReader(StringIO(csv_content))
 
-def all_ongoing_texts_with_client(driver):
+def all_ongoing_texts_with_client(driver, profile_url):
+    driver.get(profile_url)
+    with open(cookies_file, mode='r') as file:
+        csv_reader = csv.DictReader(file)
+        for row in csv_reader:
+            cookie = {
+                'name': row['\ufeffname'],
+                'value': row['value'],
+                'domain': row['domain']
+            }
+            driver.add_cookie(cookie)
+    driver.refresh()
+        
     all_texts = driver.find_elements(By.XPATH, '//div[@dir="auto"]')
     #print("length of all_texts: ", len([i.text for i in all_texts]))
     #print('all_texts: ', [i.text for i in all_texts])
-    return [i.text for i in all_texts]
+    curr_texts = [i.text for i in all_texts]
 
+    return "" if curr_texts == [] else curr_texts[-1]
+def get_first_message(title, URL, price):
+
+    first_messages = [
+                            f"Hello, I hope you’re having a good day. Just saw that you're selling {title}  on marketplace {URL}. I can come pick this up and pay you ${price} in cash.",
+                            f"Hello, just saw that you're selling a {title}  on marketplace {URL}. I can pay you ${price} in cash and come pick it up.",
+                            f"Hey, just saw that you're selling a {title} on marketplace {URL}. I can come pick this up and pay you ${price} in cash.",
+                            f"Hi, just saw that you're selling {title}  on marketplace {URL}. I could pay you up to ${price} in cash and I could come pick it up.",
+                            f"Hi, just saw that you're selling {title}  on marketplace {URL}. I can come pick this phone up for ${price} in cash asap. Where are you located?",
+                            f"Just saw that you're selling {title}  on marketplace {URL}. Can I please come pickup for ${price}?",
+                            f"Just saw that you're selling {title}  on marketplace {URL}. I can pickup for ${price}in cash.",
+                            f"Just saw that you're selling {title}  on marketplace {URL}. Would you do ${price} in cash?",
+                            f"Just saw that you're selling {title}  on marketplace {URL}. I can pay the full ${price} in cash. What's a good meetup spot for you?",
+                            f"Just saw that you're selling {title}  on marketplace {URL}. Let's do the ${price} in cash. Where are you located?"
+
+            ]
+    return random.choice(first_messages)
 temp = [
 "Come meet me here", "Address",
 "Can you meet me in","How far are you from",
@@ -105,11 +135,15 @@ temp = [
 "Did you see the","It’s not","Everybody else","Flooded with messages","I’m looking","Higher","Open","Maybe"
 ]
 
-def check_convo_end(clients_message, temp, messenger_link):
-
-    for item in temp:
-        if item.lower() in clients_message:
-            try:
+def check_convo_end(clients_message):
+    try:
+            
+        for item in temp:
+            if item.lower() in clients_message:
+                return True
+            else:
+                return False
+                """
                 SENDER_EMAIL = os.getenv("SENDER_EMAIL")
                 SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
                 RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL")
@@ -118,236 +152,165 @@ def check_convo_end(clients_message, temp, messenger_link):
 
                 send_email(SENDER_EMAIL, SENDER_PASSWORD, RECIPIENT_EMAIL, SUBJECT, BODY)
 
+                """
+                
                 break
-            except Exception as e:
-                print("found error in checking convo end: ", str(e))
+    except Exception as e:
+        print("found error in checking convo end: ", str(e))
     return
                             
 
 
-def message_clients_helper(driver):
-    while True:
-        print('in the message clients function now')
-        matchedListings = matchedListingsTable.scan()
-        #print("matched_listings: ", matchedListings)
-        driver.implicitly_wait(20)
-        try:
-            for item in matchedListings['Items']:
-                URL = item['listing_url']
-                price = item['price']
-                title = item['title']
+def get_profile_id(driver, match_url):
+    try:
+        driver.get(match_url)
+
+        #add cookies to driver
+        with open(cookies_file, mode='r') as file:
+            csv_reader = csv.DictReader(file)
+            for row in csv_reader:
+                cookie = {
+                    'name': row['\ufeffname'],
+                    'value': row['value'],
+                    'domain': row['domain']
+                }
+                driver.add_cookie(cookie)
+        driver.refresh()
+        print("cookies added successfully")
 
 
-            # URL = "https://www.facebook.com/marketplace/item/2470984673292700/?ref=browse_tab&referral_code=marketplace_top_picks&referral_story_type=top_picks"
+        #grab profile id using beautifulsoup
+        soup = BeautifulSoup(driver.page_source, 'html5lib') 
+        links = soup.findAll('a', attrs={'class': 'x972fbf'})
+        profile_links = [i.get('href') for i in links if 'profile' in i.get('href')]
+        profile_id = profile_links[0].split('/')[3]
+        messenger_link = "https://www.facebook.com/messages/t/" + profile_id
 
-            
-            
-                driver.get(URL)
+        return messenger_link
+    except Exception as e:
+        print("error getting profile id: ", str(e))
 
-                with open(cookies_file, mode='r') as file:
-                    csv_reader = csv.DictReader(file)
-                    for row in csv_reader:
-                        cookie = {
-                            'name': row['\ufeffname'],
-                            'value': row['value'],
-                            'domain': row['domain']
-                        }
-                        driver.add_cookie(cookie)
-                driver.refresh()
-                print("cookies added successfully")
+                
+def get_recent_message(match_url):
+    try:
+        response = messagesTable.get_item(
+            Key={
+                'product_url': match_url
+            }
+        )
 
+        return response['Item'] if 'Item' in response else ""
 
+    except Exception as e:
+        print("Could not find recent message: ", str(e))
 
-                soup = BeautifulSoup(driver.page_source, 'html5lib') 
-                links = soup.findAll('a', attrs={'class': 'x972fbf'})
-                profile_links = [i.get('href') for i in links if 'profile' in i.get('href')]
-                profile_id = profile_links[0].split('/')[3]
-                messenger_link = "https://www.facebook.com/messages/t/" + profile_id
+def send_message(driver, profile_url, message):
 
-                #put profile_id in the driver.get below
-                #messenger_link = "https://www.facebook.com/messages/t/100014276325191"
-                #me = "https://www.facebook.com/messages/t/100014276325191"
-                #steven = https://www.facebook.com/messages/t/100008157428607
-                driver.get(messenger_link)
+    try:
+        #log in to message url
+        driver.get(profile_url)
+        with open(cookies_file, mode='r') as file:
+            csv_reader = csv.DictReader(file)
+            for row in csv_reader:
+                cookie = {
+                    'name': row['\ufeffname'],
+                    'value': row['value'],
+                    'domain': row['domain']
+                }
+                driver.add_cookie(cookie)
+        driver.refresh()
 
-                time.sleep (10)
-                texts = all_ongoing_texts_with_client(driver)
-                """
-                after this:
-                    keep track of the last sent or received message, 
-                    check if there's a change in the messages list
-                    if yes, it means client messaged so you should send a message back
-                    if no, client has not messaged back so no need to send a message
-                """
-                theElement = driver.find_element(By.XPATH, '//div[@aria-label="Message"]')
-                #print("texts from message_helper: ", texts)
-                # if it's the first contact
-                if len(texts) == 0:
-                    messages = [
-                        f"Hello, I hope you’re having a good day. Just saw that you're selling {title}  on marketplace {URL}. I can come pick this up and pay you ${price} in cash.",
-                        f"Hello, just saw that you're selling a {title}  on marketplace {URL}. I can pay you ${price} in cash and come pick it up.",
-                        f"Hey, just saw that you're selling a {title} on marketplace {URL}. I can come pick this up and pay you ${price} in cash.",
-                        f"Hi, just saw that you're selling {title}  on marketplace {URL}. I could pay you up to ${price} in cash and I could come pick it up.",
-                        f"Hi, just saw that you're selling {title}  on marketplace {URL}. I can come pick this phone up for ${price} in cash asap. Where are you located?",
-                        f"Just saw that you're selling {title}  on marketplace {URL}. Can I please come pickup for ${price}?",
-                        f"Just saw that you're selling {title}  on marketplace {URL}. I can pickup for ${price}in cash.",
-                        f"Just saw that you're selling {title}  on marketplace {URL}. Would you do ${price} in cash?",
-                        f"Just saw that you're selling {title}  on marketplace {URL}. I can pay the full ${price} in cash. What's a good meetup spot for you?",
-                        f"Just saw that you're selling {title}  on marketplace {URL}. Let's do the ${price} in cash. Where are you located?"
+        #send message
+        messageInput = driver.find_element(By.XPATH, '//div[@aria-label="Message"]')
+        messageInput.click()
 
-                    ]
-                    message = random.choice(messages)
-                    try:
-                        theElement.click()
-                        recent_message = ""
-                        print("about to send first message")
-                        for i in message:
-                            recent_message += i
-                            theElement.send_keys(i)
-                        #send the first message
-                        theElement.send_keys(Keys.RETURN)
-                        print("first message is: ", message)
-                        #save the first message to the MessagesData DB
-                        #driver.implicitly_wait(20)
-                        """
-                        messagesTable.put_item(
-                            Item= {
-                                'messenger_link': messenger_link,
-                                'product_url': URL,
-                                'recent_message': message
-                            },
-
-                        )
-                        """
-                        #INSERT MESSAGE IN DB
-                        try:
-                            messagesTable.update_item(
-                            Key={'product_url': URL},
-                            UpdateExpression="""
-                                SET
-                                    messenger_link = :messenger_link,
-                                    product_url = :product_url,
-                                    recent_message = :recent_message  
-                            """,
-                            ExpressionAttributeValues={
-                                ':messenger_link': messenger_link,
-                                ':product_url': URL,
-                                ':recent_message': recent_message
-                            },
-                            ReturnValues="ALL_NEW"
-                        )
-                        except Exception as e:
-                            print("could not insert first message in DB: ", str(e))
-                        
+        for i in message:
+            messageInput.send_keys(i)
+        messageInput.send_keys(Keys.RETURN)
+        print(f"message sent successfully to ${profile_url}")
 
 
+        
 
-                        SENDER_EMAIL = os.getenv("SENDER_EMAIL")
-                        SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
-                        RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL")
-                        
-                        SUBJECT = "🟢 STARTED A CONVERSATION"
-                        BODY = f"Just started chatting with a client. View our conversation here: {messenger_link}"
+    except Exception as e:
+        print(f"Error sending message to {profile_url}: ", str(e))
 
-                        send_email(SENDER_EMAIL, SENDER_PASSWORD, RECIPIENT_EMAIL, SUBJECT, BODY)
-                                    
-                        print("sent and saved first message")
-                    except Exception as e:
-                        print("Error sending first message: ", str(e))
 
-                #if we're replying to the client
-                elif len(texts) > 0:
-                    recent_message = ""
-                    payload = messagesTable.get_item(
-                        Key={'product_url': URL},
-                        ProjectionExpression='recent_message'
+def message_clients_helper(driver, listings):
+
+    #loop through all listings
+    # check the messaging if it's
+    try:
+        for match in listings:
+            try:
+                match_url = match['listing_url']
+                price = match['price']
+                title = match['title']
+
+                profile_id = get_profile_id(driver, match_url)
+                recent_message = all_ongoing_texts_with_client(driver, profile_id)
+
+                if get_recent_message(match_url) == "end":
+                    SENDER_EMAIL = os.getenv("SENDER_EMAIL")
+                    SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
+                    RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL")
+                    SUBJECT = "🤝 AGREEMENT MADE"
+                    BODY = f"I just reached an agreement with a seller. Check it out here: {profile_id}"
+
+                    send_email(SENDER_EMAIL, SENDER_PASSWORD, RECIPIENT_EMAIL, SUBJECT, BODY)
+
+
+                #if first message
+                if recent_message == "":
+                    first_message = get_first_message(title, match_url, price)
+                    send_message(driver, profile_id, first_message)
+                    #update recent message in DB
+                    messagesTable.update_item(
+                        Key={'product_url': match_url},
+                        UpdateExpression="SET recent_message = :val",
+                        ExpressionAttributeValues={':val': first_message},
+                        ReturnValues="UPDATED_NEW"
                     )
-                    print("about to check if item not in payload")
-                    if 'Item' not in payload:
-                        """
-                        messagesTable.put_item(
-                                    Item={
-                                        'messenger_link': messenger_link,
-                                        'product_url': URL,
-                                        'recent_message': ""
-                                    },
+                    #UPDATE RECENT MESSAGE VARIABLE HERE
+                    recent_message = first_message
 
-                        )
-                        """
-                        try:
-                            messagesTable.update_item(
-                            Key={'product_url': URL},
-                            UpdateExpression="""
-                                SET
-                                    messenger_link = :messenger_link,
-                                    recent_message = :recent_message  
-                            """,
-                            ExpressionAttributeValues={
-                                ':messenger_link': messenger_link,
-                                ':recent_message': recent_message
-                            },
-                            ReturnValues="ALL_NEW"
-                        )
-                        except Exception as e:
-                            print("could not insert first message in DB: ", str(e))
-                        
+                    #send email to business
+                    SENDER_EMAIL = os.getenv("SENDER_EMAIL")
+                    SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
+                    RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL")
+                    SUBJECT = "🟢 STARTED CONVERSATION"
+                    BODY = f"I just started a conversation for a ${title} for ${price}. Track the conversation here: ${profile_id}"
+
+                    send_email(SENDER_EMAIL, SENDER_PASSWORD, RECIPIENT_EMAIL, SUBJECT, BODY)
+
+
+
+                if recent_message != get_recent_message():
+                    #get response from bot
+                    bot_reply = get_response(recent_message)
+                    #send message
+                    send_message(driver, profile_id, bot_reply)
+                    #update recent_message in db
+                    messagesTable.update_item(
+                        Key={'product_url': match_url},
+                        UpdateExpression="SET recent_message = :val",
+                        ExpressionAttributeValues={':val': bot_reply},
+                        ReturnValues="UPDATED_NEW"
+                    )
+                    if check_convo_end(recent_message):
+                        messagesTable.update_item(
+                        Key={'product_url': match_url},
+                        UpdateExpression="SET recent_message = :val",
+                        ExpressionAttributeValues={':val': "end"},
+                        ReturnValues="UPDATED_NEW"
+                    )
                     
-                    
-                    currentChat = messagesTable.get_item(Key={'product_url': URL})
 
+            except Exception as e:
+                print(f"Error getting all current texts for {profile_id} with a message: ", str(e))
 
-                    #get the most recent message sent
-                    
-                    recent_message = currentChat['Item']['recent_message']
-                    #if the most recent message is not the same as the message in the messaging area, we have a response
-                    if texts[-1] != recent_message:
-                        #get the response from the AI bot and send it
-                        message = get_response(texts[-1], messenger_link)
-                        #print("message is: ", message)
-                        #print("texts[-1]: ", texts[-1])
-                        recent_message = message
+    except Exception as e:
+        print("Error occurred: ", str(e))
 
-                        if message != None or message != '':
-                            for i in message:
-                                theElement.send_keys(i)
-                            theElement.send_keys(Keys.RETURN)
-                            print("message sent")
-                            #driver.implicitly_wait(20)
-
-    
-
-
-                        #now update the recent message of that chat
-                        #if we can find the current chat item in the DB, we update the most recent message
-
-                        if len(currentChat['Item']) == 1:
-                            messagesTable.update_item(
-                                Key={'product_url': URL},
-                                UpdateExpression='SET recent_message = :val',
-                                ExpressionAttributeValues={':val': recent_message}
-                            )
-                            print("updated the message in the DB")
-                            check_convo_end(texts[-1], temp, messenger_link)
-
-                        #else we create a new chat in the DB 
-                        else:
-                            messagesTable.put_item(
-                                Item={
-                                    'messenger_link': messenger_link,
-                                    'product_url': URL,
-                                    'recent_message': recent_message
-                                },
-
-                
-                            )
-                #here
-            time.sleep(5 * 60)
-                
-        except Exception as e:
-            
-            print("error: ", str(e))
-
-
-
-
+    pass
 

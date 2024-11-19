@@ -8,10 +8,12 @@ from selenium.webdriver.support import expected_conditions as EC # type: ignore
 from flask import Flask, request, jsonify # type: ignore
 from flask_cors import CORS  # type: ignore # Import CORS
 
-from misc import scraper_helper
+from misc import scraper_helper, get_all_listings
 from messenger import message_clients_helper
 from chatbot import add_training_data
 
+import schedule # type: ignore
+import time
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
@@ -47,10 +49,15 @@ def insert_listings():
 
     return jsonify(result)
 
-@app.route('/messaging_endpoint', methods=['POST'])
+@app.route('/messaging_endpoint', methods=['GET'])
 def messaging_endpoint():
-    message_clients_helper(driver)
-    return jsonify({"message": "success"})
+    listings = get_all_listings()
+    #print("length of payload: ", len(listings))
+    
+    #perform messaging action on listings here
+    message_clients_helper(driver, listings)
+    
+    return jsonify(listings)
 
 
 

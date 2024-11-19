@@ -44,6 +44,21 @@ csv_content = response['Body'].read().decode('utf-8')
 
 
 table = dynamodb.Table('ListingsData')
+messagesTable = dynamodb.Table('MessagesData')
+
+
+def get_all_listings():
+    try:
+        response = table.scan()
+        items = response['Items']
+
+        while 'LastEvaluatedKey' in response:
+            response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+            items.extend(response['Items'])
+        return items
+    
+    except Exception as e:
+        print("could not get all listings: ", str(e))
 
 
 
