@@ -42,6 +42,7 @@ def insert_listings():
     maxPrice = data.get("maxPrice")
     taskUrl = data.get("taskUrl")
 
+
     result = scraper_helper(driver, query, minPrice, maxPrice, taskUrl)
 
     return jsonify(result)
@@ -56,8 +57,8 @@ def messaging_endpoint():
 if __name__ == "__main__":
 
     #change to port 80
-    app.run(host='0.0.0.0', port=80)
-    print("up on 80")
+    app.run(host='0.0.0.0', port=4000)
+    print("up on 4000")
 
 
 

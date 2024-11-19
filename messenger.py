@@ -15,6 +15,8 @@ import random
 
 
 
+
+
 from selenium import webdriver  # type: ignore
 from selenium.webdriver.common.by import By # type: ignore
 from selenium.webdriver.common.keys import Keys # type: ignore
@@ -56,6 +58,21 @@ messagesTable = dynamodb.Table('MessagesData')
 BUCKET_NAME='qkr'
 CSV_FILE_KEY='qkr.csv'
 
+def get_desktop_path():
+    home = str(Path.home())
+
+    if platform.system() == "Windows":
+        desktop = os.path.join(home, "Desktop")
+    elif platform.system() == "Darwin":
+        desktop = os.path.join(home, "Desktop")
+    else:
+        desktop = os.path.join(home, "Desktop")
+    return desktop
+
+cookies_file = os.path.join(get_desktop_path(), "qkr.csv")
+
+
+
 
 
 response = s3.get_object(Bucket=BUCKET_NAME, Key=CSV_FILE_KEY)
@@ -66,6 +83,7 @@ csv_reader = csv.DictReader(StringIO(csv_content))
 
 def all_ongoing_texts_with_client(driver):
     all_texts = driver.find_elements(By.XPATH, '//div[@dir="auto"]')
+    #print('all_texts: ', all_texts)
     return [i.text for i in all_texts]
 
 temp = [
@@ -90,15 +108,18 @@ def check_convo_end(clients_message, temp, messenger_link):
 
     for item in temp:
         if item.lower() in clients_message:
-            SENDER_EMAIL = "irescueresale@gmail.com"
-            SENDER_PASSWORD = "adml cbcj wyqc jths"
-            RECIPIENT_EMAIL = "irescueresale@gmail.com"
-            SUBJECT = "🤝 AGREEMENT MADE"
-            BODY = f"I just reached an agreement with a seller. Check it out here: {messenger_link}"
+            try:
+                SENDER_EMAIL = os.getenv("SENDER_EMAIL")
+                SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
+                RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL")
+                SUBJECT = "🤝 AGREEMENT MADE"
+                BODY = f"I just reached an agreement with a seller. Check it out here: {messenger_link}"
 
-            send_email(SENDER_EMAIL, SENDER_PASSWORD, RECIPIENT_EMAIL, SUBJECT, BODY)
+                send_email(SENDER_EMAIL, SENDER_PASSWORD, RECIPIENT_EMAIL, SUBJECT, BODY)
 
-            break
+                break
+            except Exception as e:
+                print("found error in checking convo end: ", str(e))
     return
                             
 
@@ -107,7 +128,8 @@ def message_clients_helper(driver):
     while True:
         print('in the message clients function now')
         matchedListings = matchedListingsTable.scan()
-        
+        #print("matched_listings: ", matchedListings)
+        driver.implicitly_wait(20)
         try:
             for item in matchedListings['Items']:
                 URL = item['listing_url']
@@ -121,18 +143,19 @@ def message_clients_helper(driver):
             
                 driver.get(URL)
 
-
-                for row in csv_reader:
-                    cookies.append({
-                        'name': row['\ufeffname'],
-                        'value': row['value'],
-                        'domain': row['domain']
-                    })
-
-            
-                for cookie in cookies:
-                    driver.add_cookie(cookie)
+                with open(cookies_file, mode='r') as file:
+                    csv_reader = csv.DictReader(file)
+                    for row in csv_reader:
+                        cookie = {
+                            'name': row['\ufeffname'],
+                            'value': row['value'],
+                            'domain': row['domain']
+                        }
+                        driver.add_cookie(cookie)
                 driver.refresh()
+                print("cookies added successfully")
+
+
 
                 soup = BeautifulSoup(driver.page_source, 'html5lib') 
                 links = soup.findAll('a', attrs={'class': 'x972fbf'})
@@ -141,7 +164,9 @@ def message_clients_helper(driver):
                 messenger_link = "https://www.facebook.com/messages/t/" + profile_id
 
                 #put profile_id in the driver.get below
-                #"https://www.facebook.com/messages/t/100014276325191"
+                #messenger_link = "https://www.facebook.com/messages/t/100014276325191"
+                #me = "https://www.facebook.com/messages/t/100014276325191"
+                #steven = https://www.facebook.com/messages/t/100008157428607
                 driver.get(messenger_link)
 
                 time.sleep (10)
@@ -154,7 +179,7 @@ def message_clients_helper(driver):
                     if no, client has not messaged back so no need to send a message
                 """
                 theElement = driver.find_element(By.XPATH, '//div[@aria-label="Message"]')
-
+                #print("texts from message_helper: ", texts)
                 # if it's the first contact
                 if len(texts) == 0:
                     messages = [
@@ -171,32 +196,63 @@ def message_clients_helper(driver):
 
                     ]
                     message = random.choice(messages)
-                    for i in message:
-                        theElement.send_keys(i)
-                    #send the first message
-                    theElement.send_keys(Keys.RETURN)
-                    #save the first message to the MessagesData DB
-                    driver.implicitly_wait(20)
-                    messagesTable.put_item(
-                        Item= {
-                            'messenger_link': messenger_link,
-                            'product_url': URL,
-                            'recent_message': message
-                        },
+                    try:
+                        theElement.click()
+                        recent_message = ""
+                        print("about to send first message")
+                        for i in message:
+                            recent_message += i
+                            theElement.send_keys(i)
+                        #send the first message
+                        theElement.send_keys(Keys.RETURN)
+                        print("first message is: ", message)
+                        #save the first message to the MessagesData DB
+                        #driver.implicitly_wait(20)
+                        """
+                        messagesTable.put_item(
+                            Item= {
+                                'messenger_link': messenger_link,
+                                'product_url': URL,
+                                'recent_message': message
+                            },
 
-                    )
+                        )
+                        """
+                        #INSERT MESSAGE IN DB
+                        try:
+                            messagesTable.update_item(
+                            Key={'product_url': URL},
+                            UpdateExpression="""
+                                SET
+                                    messenger_link = :messenger_link,
+                                    product_url = :product_url,
+                                    recent_message = :recent_message  
+                            """,
+                            ExpressionAttributeValues={
+                                ':messenger_link': messenger_link,
+                                ':product_url': URL,
+                                ':recent_message': recent_message
+                            },
+                            ReturnValues="ALL_NEW"
+                        )
+                        except Exception as e:
+                            print("could not insert first message in DB: ", str(e))
+                        
 
 
 
-                    SENDER_EMAIL = "irescueresale@gmail.com"
-                    SENDER_PASSWORD = "adml cbcj wyqc jths"
-                    RECIPIENT_EMAIL = "irescueresale@gmail.com"
-                    SUBJECT = "🟢 STARTED A CONVERSATION"
-                    BODY = f"Just started chatting with a client. View our conversation here: {messenger_link}"
+                        SENDER_EMAIL = os.getenv("SENDER_EMAIL")
+                        SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
+                        RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL")
+                        
+                        SUBJECT = "🟢 STARTED A CONVERSATION"
+                        BODY = f"Just started chatting with a client. View our conversation here: {messenger_link}"
 
-                    send_email(SENDER_EMAIL, SENDER_PASSWORD, RECIPIENT_EMAIL, SUBJECT, BODY)
-                                
-                    print("sent and saved first message")
+                        send_email(SENDER_EMAIL, SENDER_PASSWORD, RECIPIENT_EMAIL, SUBJECT, BODY)
+                                    
+                        print("sent and saved first message")
+                    except Exception as e:
+                        print("Error sending first message: ", str(e))
 
                 #if we're replying to the client
                 elif len(texts) > 0:
@@ -207,6 +263,7 @@ def message_clients_helper(driver):
                     )
                     print("about to check if item not in payload")
                     if 'Item' not in payload:
+                        """
                         messagesTable.put_item(
                                     Item={
                                         'messenger_link': messenger_link,
@@ -215,6 +272,24 @@ def message_clients_helper(driver):
                                     },
 
                         )
+                        """
+                        try:
+                            messagesTable.update_item(
+                            Key={'product_url': URL},
+                            UpdateExpression="""
+                                SET
+                                    messenger_link = :messenger_link,
+                                    recent_message = :recent_message  
+                            """,
+                            ExpressionAttributeValues={
+                                ':messenger_link': messenger_link,
+                                ':recent_message': recent_message
+                            },
+                            ReturnValues="ALL_NEW"
+                        )
+                        except Exception as e:
+                            print("could not insert first message in DB: ", str(e))
+                        
                     
                     
                     currentChat = messagesTable.get_item(Key={'product_url': URL})
@@ -231,7 +306,7 @@ def message_clients_helper(driver):
                         for i in message:
                             theElement.send_keys(i)
                         theElement.send_keys(Keys.RETURN)
-                        driver.implicitly_wait(20)
+                        #driver.implicitly_wait(20)
     
 
 
@@ -262,6 +337,7 @@ def message_clients_helper(driver):
             time.sleep(5 * 60)
                 
         except Exception as e:
+            
             print("error: ", str(e))
 
 

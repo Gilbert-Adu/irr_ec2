@@ -24,4 +24,19 @@ def send_email(sender_email, sender_password, recipient_email, subject, body):
     finally:
         server.quit()
 
+
+"""
+SENDER_EMAIL = "irescueresale@gmail.com"
+SENDER_PASSWORD = "dsbo ncmg tgkm cigk"
+RECIPIENT_EMAIL = "gilbertenos770@yahoo.com"
+SUBJECT = "🤝 TEST MESSAGE"
+BODY = "test message"
+
+"""
+#koda = dsbo ncmg tgkm cigk
+#gil = xnub igvz sgfo ibem
+
+#send_email(SENDER_EMAIL, SENDER_PASSWORD, RECIPIENT_EMAIL, SUBJECT, BODY)
+
+
                     
