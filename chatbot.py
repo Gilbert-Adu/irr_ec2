@@ -89,7 +89,7 @@ def get_response(user_input, chat_link, questions_answers=load_training_data()):
 
         """
 
-        if user_input is not None or user_input != '':
+        if user_input != None or user_input != '':
             SENDER_EMAIL = os.getenv("SENDER_EMAIL")
             SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
             RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL")

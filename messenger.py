@@ -83,7 +83,8 @@ csv_reader = csv.DictReader(StringIO(csv_content))
 
 def all_ongoing_texts_with_client(driver):
     all_texts = driver.find_elements(By.XPATH, '//div[@dir="auto"]')
-    #print('all_texts: ', all_texts)
+    #print("length of all_texts: ", len([i.text for i in all_texts]))
+    #print('all_texts: ', [i.text for i in all_texts])
     return [i.text for i in all_texts]
 
 temp = [
@@ -183,15 +184,15 @@ def message_clients_helper(driver):
                 # if it's the first contact
                 if len(texts) == 0:
                     messages = [
-                        f"Hello, I hope you’re having a good day. Just saw that you're selling {title}  on marketplace {URL}. I can come pick this up and pay you ${price} in cash."
-                        f"Hello, just saw that you're selling a {title}  on marketplace {URL}. I can pay you ${price} in cash and come pick it up."
-                        f"Hey, just saw that you're selling a {title} on marketplace {URL}. I can come pick this up and pay you ${price} in cash."
-                        f"Hi, just saw that you're selling {title}  on marketplace {URL}. I could pay you up to ${price} in cash and I could come pick it up."
-                        f"Hi, just saw that you're selling {title}  on marketplace {URL}. I can come pick this phone up for ${price} in cash asap. Where are you located?"
-                        f"Just saw that you're selling {title}  on marketplace {URL}. Can I please come pickup for ${price}?"
-                        f"Just saw that you're selling {title}  on marketplace {URL}. I can pickup for ${price}in cash."
-                        f"Just saw that you're selling {title}  on marketplace {URL}. Would you do ${price} in cash?"
-                        f"Just saw that you're selling {title}  on marketplace {URL}. I can pay the full ${price} in cash. What's a good meetup spot for you?"
+                        f"Hello, I hope you’re having a good day. Just saw that you're selling {title}  on marketplace {URL}. I can come pick this up and pay you ${price} in cash.",
+                        f"Hello, just saw that you're selling a {title}  on marketplace {URL}. I can pay you ${price} in cash and come pick it up.",
+                        f"Hey, just saw that you're selling a {title} on marketplace {URL}. I can come pick this up and pay you ${price} in cash.",
+                        f"Hi, just saw that you're selling {title}  on marketplace {URL}. I could pay you up to ${price} in cash and I could come pick it up.",
+                        f"Hi, just saw that you're selling {title}  on marketplace {URL}. I can come pick this phone up for ${price} in cash asap. Where are you located?",
+                        f"Just saw that you're selling {title}  on marketplace {URL}. Can I please come pickup for ${price}?",
+                        f"Just saw that you're selling {title}  on marketplace {URL}. I can pickup for ${price}in cash.",
+                        f"Just saw that you're selling {title}  on marketplace {URL}. Would you do ${price} in cash?",
+                        f"Just saw that you're selling {title}  on marketplace {URL}. I can pay the full ${price} in cash. What's a good meetup spot for you?",
                         f"Just saw that you're selling {title}  on marketplace {URL}. Let's do the ${price} in cash. Where are you located?"
 
                     ]
@@ -302,12 +303,15 @@ def message_clients_helper(driver):
                     if texts[-1] != recent_message:
                         #get the response from the AI bot and send it
                         message = get_response(texts[-1], messenger_link)
+                        #print("message is: ", message)
+                        #print("texts[-1]: ", texts[-1])
                         recent_message = message
 
-                        if message is not None or message != '':
+                        if message != None or message != '':
                             for i in message:
                                 theElement.send_keys(i)
                             theElement.send_keys(Keys.RETURN)
+                            print("message sent")
                             #driver.implicitly_wait(20)
 
     
