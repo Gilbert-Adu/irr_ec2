@@ -89,16 +89,18 @@ def get_response(user_input, chat_link, questions_answers=load_training_data()):
 
         """
 
-        SENDER_EMAIL = os.getenv("SENDER_EMAIL")
-        SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
-        RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL")
-        SUBJECT = "🔴 COULD NOT ANSWER A CLIENT QUESTION"
-        BODY = f"Hi there, \n On Facebook Marketplace, a client said, {user_input} and I did not know how to respond. \n Here's a link to the chat: {chat_link} Thanks,\n Your Friendly Bot."
+        if user_input is not None or user_input != '':
+            SENDER_EMAIL = os.getenv("SENDER_EMAIL")
+            SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
+            RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL")
+            SUBJECT = "🔴 COULD NOT ANSWER A CLIENT QUESTION"
+            BODY = f"Hi there, \n On Facebook Marketplace, a client said, {user_input} and I did not know how to respond. \n Here's a link to the chat: {chat_link} Thanks,\n Your Friendly Bot."
 
 
-        send_email(SENDER_EMAIL, SENDER_PASSWORD, RECIPIENT_EMAIL, SUBJECT, BODY)
+            #send_email(SENDER_EMAIL, SENDER_PASSWORD, RECIPIENT_EMAIL, SUBJECT, BODY)
 
-        send_email(SENDER_EMAIL, SENDER_PASSWORD, RECIPIENT_EMAIL, SUBJECT, BODY)
+            send_email(SENDER_EMAIL, SENDER_PASSWORD, RECIPIENT_EMAIL, SUBJECT, BODY)
+        
         return 
     
 def add_training_data(question, answer, questions_answers=load_training_data()):

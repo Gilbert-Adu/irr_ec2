@@ -303,10 +303,13 @@ def message_clients_helper(driver):
                         #get the response from the AI bot and send it
                         message = get_response(texts[-1], messenger_link)
                         recent_message = message
-                        for i in message:
-                            theElement.send_keys(i)
-                        theElement.send_keys(Keys.RETURN)
-                        #driver.implicitly_wait(20)
+
+                        if message is not None or message != '':
+                            for i in message:
+                                theElement.send_keys(i)
+                            theElement.send_keys(Keys.RETURN)
+                            #driver.implicitly_wait(20)
+
     
 
 
