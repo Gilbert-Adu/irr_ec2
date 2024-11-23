@@ -27,24 +27,11 @@ dynamodb = boto3.resource('dynamodb',
                         )
 
 
-s3 = boto3.client('s3',
-
-                region_name=os.getenv("REGION_NAME"),
-                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-                aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
-                         
-                         
-            )
-BUCKET_NAME='qkr'
-CSV_FILE_KEY='qkr.csv'
-
-
-response = s3.get_object(Bucket=BUCKET_NAME, Key=CSV_FILE_KEY)
-csv_content = response['Body'].read().decode('utf-8')
-
 
 table = dynamodb.Table('ListingsData')
 messagesTable = dynamodb.Table('MessagesData')
+tasksTable = dynamodb.Table('TasksTable')
+
 
 
 def get_all_listings():
@@ -58,7 +45,24 @@ def get_all_listings():
         return items
     
     except Exception as e:
-        print("could not get all listings: ", str(e))
+        print("could not get all LISTINGS: ", str(e))
+
+
+#retrieves all tasks from DB
+def get_all_tasks():
+    try:
+        response = tasksTable.scan()
+        items = response['Items']
+
+        while 'LastEvaluatedKey' in response:
+            response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+            items.extend(response['Items'])
+        return items
+    
+    except Exception as e:
+        print("could not get all TASKS: ", str(e))
+
+
 
 
 
@@ -69,23 +73,16 @@ def match_criteria(title, query):
         return True
     return False
 
-cookies = []
-csv_reader = csv.DictReader(StringIO(csv_content))
 
 
-
-def scraper_helper(driver, query, minPrice, maxPrice, taskUrl):
+def scraper_helper(driver, query, minPrice, maxPrice, taskUrl, cookies):
 
         
-        for row in csv_reader:
-            cookies.append({
-                'name': row['\ufeffname'],
-                'value': row['value'],
-                'domain': row['domain']
-            })
+
+        driver.implicitly_wait(10)
 
         driver.get(taskUrl)
-            
+        driver.delete_all_cookies()
         for cookie in cookies:
             driver.add_cookie(cookie)
         driver.refresh()
@@ -125,7 +122,7 @@ def scraper_helper(driver, query, minPrice, maxPrice, taskUrl):
                 href_value = link_element.get('href')
                 price = listings[i].find('span', class_='x193iq5w xeuugli x13faqbe x1vvkbs xlh3980 xvmahel x1n0sxbx x1lliihq x1s928wv xhkezso x1gmr53x x1cpjm7i x1fgarty x1943h6x x4zkp8e x676frb x1lkfr7t x1lbecb7 x1s688f xzsf02u').get_text()
                 
-                listing_url = "https://www.facebook.com/" + href_value
+                listing_url = "https://www.facebook.com" + href_value
                 if '$' in price and ',' in price:
                     #print("price: ", price)
                     price = int(price[1:].replace(",", ""))
@@ -136,12 +133,13 @@ def scraper_helper(driver, query, minPrice, maxPrice, taskUrl):
                     # and minPrice <= int(price) <= maxPrice
 
                     
-                    driver.get(listing_url)
+                    
                     driver.implicitly_wait(10)  # Waits for 10 seconds for the page to load
-
-                        
+                    driver.get(listing_url)
+                    driver.delete_all_cookies()
                     for cookie in cookies:
                         driver.add_cookie(cookie)
+                    
                     driver.refresh()
                     
 
@@ -174,26 +172,26 @@ def scraper_helper(driver, query, minPrice, maxPrice, taskUrl):
                     
                     #matches.append(match)
             #table.put_item(Item={'title': title, 'description': desc_text, 'price': price, 'listing_url': listing_url,'task_url':taskUrl})
-            try:
-                table.update_item(
-                Key={'listing_url': listing_url},
-                UpdateExpression="""
-                    SET
-                        title = :title,
-                        description = :description,
-                        price = :price,
-                        task_url = :task_url
-                """,
-                ExpressionAttributeValues={
-                    ':title': title,
-                    ':description': desc_text,
-                    ':price': price,
-                    ':task_url': taskUrl
-                },
-                ReturnValues="ALL_NEW"
-                )
-            except Exception as e:
-                print("could not insert into listing DB", str(e))
+                try:
+                    table.update_item(
+                    Key={'listing_url': listing_url},
+                    UpdateExpression="""
+                        SET
+                            title = :title,
+                            description = :description,
+                            price = :price,
+                            task_url = :task_url
+                    """,
+                    ExpressionAttributeValues={
+                        ':title': title,
+                        ':description': desc_text,
+                        ':price': price,
+                        ':task_url': taskUrl
+                    },
+                    ReturnValues="ALL_NEW"
+                    )
+                except Exception as e:
+                    print("could not insert into listing DB", str(e))
             print("matched listing inserted into database")
                         
                     
@@ -201,6 +199,5 @@ def scraper_helper(driver, query, minPrice, maxPrice, taskUrl):
         return
 
                     
+#when listings is empty
 
-                    
-    

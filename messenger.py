@@ -34,6 +34,7 @@ from dotenv import load_dotenv # type: ignore
 
 
 
+load_dotenv()
 
 dynamodb = boto3.resource('dynamodb',
                           region_name=os.getenv("REGION_NAME"),
@@ -41,66 +42,30 @@ dynamodb = boto3.resource('dynamodb',
                           aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
                           )
 
-#s3 bucket
-s3 = boto3.client('s3',
-
-                region_name=os.getenv("REGION_NAME"),
-                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-                aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
-                         
-                         
-            )
 
 #dynamoDB tables
 matchedListingsTable = dynamodb.Table('ListingsData')
 messagesTable = dynamodb.Table('MessagesData')
 
 
-BUCKET_NAME='qkr'
-CSV_FILE_KEY='qkr.csv'
+def all_ongoing_texts_with_client(driver, profile_url, cookies):
 
-def get_desktop_path():
-    home = str(Path.home())
-
-    if platform.system() == "Windows":
-        desktop = os.path.join(home, "Desktop")
-    elif platform.system() == "Darwin":
-        desktop = os.path.join(home, "Desktop")
-    else:
-        desktop = os.path.join(home, "Desktop")
-    return desktop
-
-cookies_file = os.path.join(get_desktop_path(), "qkr.csv")
-
-
-
-
-
-response = s3.get_object(Bucket=BUCKET_NAME, Key=CSV_FILE_KEY)
-csv_content = response['Body'].read().decode('utf-8')
-
-cookies = []
-csv_reader = csv.DictReader(StringIO(csv_content))
-
-def all_ongoing_texts_with_client(driver, profile_url):
+    
+  
+    driver.implicitly_wait(10)  # Wait up to 10 seconds for elements to load
     driver.get(profile_url)
-    with open(cookies_file, mode='r') as file:
-        csv_reader = csv.DictReader(file)
-        for row in csv_reader:
-            cookie = {
-                'name': row['\ufeffname'],
-                'value': row['value'],
-                'domain': row['domain']
-            }
-            driver.add_cookie(cookie)
+    driver.delete_all_cookies()
+    for cookie in cookies:
+        driver.add_cookie(cookie)
     driver.refresh()
-        
+
     all_texts = driver.find_elements(By.XPATH, '//div[@dir="auto"]')
     #print("length of all_texts: ", len([i.text for i in all_texts]))
     #print('all_texts: ', [i.text for i in all_texts])
     curr_texts = [i.text for i in all_texts]
 
     return "" if curr_texts == [] else curr_texts[-1]
+
 def get_first_message(title, URL, price):
 
     first_messages = [
@@ -161,37 +126,36 @@ def check_convo_end(clients_message):
                             
 
 
-def get_profile_id(driver, match_url):
+def get_profile_id(driver, match_url, cookies):
     try:
+        driver.implicitly_wait(10)
         driver.get(match_url)
-
-        #add cookies to driver
-        with open(cookies_file, mode='r') as file:
-            csv_reader = csv.DictReader(file)
-            for row in csv_reader:
-                cookie = {
-                    'name': row['\ufeffname'],
-                    'value': row['value'],
-                    'domain': row['domain']
-                }
-                driver.add_cookie(cookie)
+        driver.delete_all_cookies()
+        for cookie in cookies:
+            driver.add_cookie(cookie)
         driver.refresh()
-        print("cookies added successfully")
+    
+        print("cookies added to driver successfully when getting profile id")
+
 
 
         #grab profile id using beautifulsoup
         soup = BeautifulSoup(driver.page_source, 'html5lib') 
         links = soup.findAll('a', attrs={'class': 'x972fbf'})
         profile_links = [i.get('href') for i in links if 'profile' in i.get('href')]
-        profile_id = profile_links[0].split('/')[3]
+        #print("current_url: ", driver.current_url)
+        #print("match_url: ", match_url)
+        #print("profile_links: ", profile_links)
+        profile_id = profile_links[1].split('/')[3]
         messenger_link = "https://www.facebook.com/messages/t/" + profile_id
+
 
         return messenger_link
     except Exception as e:
         print("error getting profile id: ", str(e))
 
                 
-def get_recent_message(match_url):
+def get_recent_message_from_db(match_url):
     try:
         response = messagesTable.get_item(
             Key={
@@ -199,44 +163,50 @@ def get_recent_message(match_url):
             }
         )
 
-        return response['Item'] if 'Item' in response else ""
+        response_value = response['Item']['recent_message']
+
+        if 'Item' in response and response_value != None:
+            return response['Item']['recent_message']
+        return ""
+
+
 
     except Exception as e:
         print("Could not find recent message: ", str(e))
 
-def send_message(driver, profile_url, message):
+def send_message(driver, profile_url, message, cookies):
 
     try:
-        #log in to message url
+
+       
+
+        driver.implicitly_wait(10)  # Wait up to 10 seconds for elements to load
+        driver.execute_script("window.open('');")
+        driver.switch_to.window(driver.window_handles[1])
+
         driver.get(profile_url)
-        with open(cookies_file, mode='r') as file:
-            csv_reader = csv.DictReader(file)
-            for row in csv_reader:
-                cookie = {
-                    'name': row['\ufeffname'],
-                    'value': row['value'],
-                    'domain': row['domain']
-                }
-                driver.add_cookie(cookie)
+        driver.delete_all_cookies()
+        for cookie in cookies:
+            driver.add_cookie(cookie)
         driver.refresh()
+        #log in to message url
 
         #send message
         messageInput = driver.find_element(By.XPATH, '//div[@aria-label="Message"]')
         messageInput.click()
 
-        for i in message:
-            messageInput.send_keys(i)
-        messageInput.send_keys(Keys.RETURN)
-        print(f"message sent successfully to ${profile_url}")
 
+        if message != None or message != "":
 
-        
-
+            for i in message:
+                messageInput.send_keys(i)
+            messageInput.send_keys(Keys.RETURN)
+            print(f"message sent successfully to {profile_url}")
     except Exception as e:
         print(f"Error sending message to {profile_url}: ", str(e))
 
 
-def message_clients_helper(driver, listings):
+def message_clients_helper(driver, listings, cookies):
 
     #loop through all listings
     # check the messaging if it's
@@ -247,10 +217,12 @@ def message_clients_helper(driver, listings):
                 price = match['price']
                 title = match['title']
 
-                profile_id = get_profile_id(driver, match_url)
-                recent_message = all_ongoing_texts_with_client(driver, profile_id)
 
-                if get_recent_message(match_url) == "end":
+
+                profile_id = get_profile_id(driver, match_url, cookies)
+                recent_message = all_ongoing_texts_with_client(driver, profile_id, cookies)
+
+                if get_recent_message_from_db(match_url) == "end":
                     SENDER_EMAIL = os.getenv("SENDER_EMAIL")
                     SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
                     RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL")
@@ -263,14 +235,23 @@ def message_clients_helper(driver, listings):
                 #if first message
                 if recent_message == "":
                     first_message = get_first_message(title, match_url, price)
-                    send_message(driver, profile_id, first_message)
+                    send_message(driver, profile_id, first_message, cookies)
                     #update recent message in DB
-                    messagesTable.update_item(
+                    message_payload = {
+                        'product_url': match_url,
+                        'messenger_link': profile_id,
+                        'recent_message': first_message
+
+                    }
+                    messagesTable.put_item(Item=message_payload)
+                    """
+                        messagesTable.update_item(
                         Key={'product_url': match_url},
                         UpdateExpression="SET recent_message = :val",
                         ExpressionAttributeValues={':val': first_message},
                         ReturnValues="UPDATED_NEW"
                     )
+                    """
                     #UPDATE RECENT MESSAGE VARIABLE HERE
                     recent_message = first_message
 
@@ -284,12 +265,13 @@ def message_clients_helper(driver, listings):
                     send_email(SENDER_EMAIL, SENDER_PASSWORD, RECIPIENT_EMAIL, SUBJECT, BODY)
 
 
-
-                if recent_message != get_recent_message():
+                #recent_message gets most recent message between two parties
+                message_from_client = all_ongoing_texts_with_client(driver, profile_id, cookies)
+                if message_from_client != get_recent_message_from_db(match_url) and get_recent_message_from_db(match_url) != "":
                     #get response from bot
-                    bot_reply = get_response(recent_message)
+                    bot_reply = get_response(message_from_client, profile_id)
                     #send message
-                    send_message(driver, profile_id, bot_reply)
+                    send_message(driver, profile_id, bot_reply, cookies)
                     #update recent_message in db
                     messagesTable.update_item(
                         Key={'product_url': match_url},
@@ -304,10 +286,12 @@ def message_clients_helper(driver, listings):
                         ExpressionAttributeValues={':val': "end"},
                         ReturnValues="UPDATED_NEW"
                     )
+                else:
+                    print("chose to not send a message--client hasn't responded--no error here")
                     
 
             except Exception as e:
-                print(f"Error getting all current texts for {profile_id} with a message: ", str(e))
+                print(f"Error checking status for {profile_id} with a message: ", str(e))
 
     except Exception as e:
         print("Error occurred: ", str(e))
