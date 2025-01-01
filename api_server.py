@@ -55,7 +55,7 @@ cookies = [
 firefox_options = Options()
 firefox_options.add_argument("--headless")
 #options=firefox_options
-driver = webdriver.Firefox()
+driver = webdriver.Firefox(options=firefox_options)
 
 @app.route('/test', methods=['GET'])
 def test_endpoint():
