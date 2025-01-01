@@ -13,6 +13,10 @@ import boto3 # type: ignore
 from io import StringIO
 import csv
 from dotenv import load_dotenv # type: ignore
+from messenger import send_message, get_first_message
+from emailer import send_email
+import re
+
 
 load_dotenv()
 
@@ -69,8 +73,23 @@ def get_all_tasks():
 
 def match_criteria(title, query):
 
+    title = title.replace(" ", "")
+    query = query.replace(" ", "")
+
     if query.lower() in title.lower():
-        return True
+        if ("promax" in query.lower()) and ("promax" in title.lower()):
+            return True
+        if ("promax" not in query.lower()) and ("promax" in title.lower()):
+            return False
+        if ("pro" in query.lower()) and ("pro" in title.lower()):
+            return True
+        if ("max" in query.lower()) and ("max" in title.lower()):
+            return True
+        if ("max" not in query.lower()) and ("max" not in title.lower()):
+            return True
+        if ("pro" not in query.lower()) and ("pro" not in title.lower()):
+            return True
+        return False
     return False
 
 
@@ -114,7 +133,6 @@ def scraper_helper(driver, query, minPrice, maxPrice, taskUrl, cookies):
                 #print("link_a: ", link_element)
 
                     
-                print(f"Match found: {title}")
 
 
                 #print("first listing: ", listings[i])
@@ -129,7 +147,7 @@ def scraper_helper(driver, query, minPrice, maxPrice, taskUrl, cookies):
                 elif '$' in price and ',' not in price:
                     #print("price: ", price)
                     price = int(price[1:])
-                if match_criteria(title, query) and minPrice <= price <= maxPrice:
+                if match_criteria(title, query) and (price >= minPrice) and (price <= maxPrice):
                     # and minPrice <= int(price) <= maxPrice
 
                     
@@ -161,39 +179,65 @@ def scraper_helper(driver, query, minPrice, maxPrice, taskUrl, cookies):
                     """
                         put matches into database
                     """
-                    match = {
-                            "title": title,
-                            "description": desc_text,
-                            "price": price,
-                            "listing_url": listing_url,
-                            "taskUrl": taskUrl
-                        }
-                        #put match data in table
                     
-                    #matches.append(match)
-            #table.put_item(Item={'title': title, 'description': desc_text, 'price': price, 'listing_url': listing_url,'task_url':taskUrl})
-                try:
-                    table.update_item(
-                    Key={'listing_url': listing_url},
-                    UpdateExpression="""
-                        SET
-                            title = :title,
-                            description = :description,
-                            price = :price,
-                            task_url = :task_url
-                    """,
-                    ExpressionAttributeValues={
-                        ':title': title,
-                        ':description': desc_text,
-                        ':price': price,
-                        ':task_url': taskUrl
-                    },
-                    ReturnValues="ALL_NEW"
-                    )
-                except Exception as e:
-                    print("could not insert into listing DB", str(e))
-            print("matched listing inserted into database")
+                    try:
                         
+                        if query.lower() in title.lower() and "case" not in title.lower() and "protector" not in title.lower() and "charger" not in title.lower():
+                            print(f"title is {title.lower()} and query is {query.lower()}")
+                            print(f"Match found for : {title}")
+
+                            table.update_item(
+                            Key={'listing_url': listing_url},
+                            UpdateExpression="""
+                                SET
+                                    title = :title,
+                                    description = :description,
+                                    price = :price,
+                                    task_url = :task_url,
+                                    minPrice = :minPrice,
+                                    maxPrice = :maxPrice
+                            """,
+                            ExpressionAttributeValues={
+                                ':title': title,
+                                ':description': desc_text,
+                                ':price': price,
+                                ':task_url': taskUrl,
+                                ':minPrice': minPrice,
+                                ':maxPrice': maxPrice
+                            },
+                            ReturnValues="ALL_NEW"
+                            )
+                            print("matched listing inserted into database")
+                            message = get_first_message(title, listing_url,price, minPrice, maxPrice)
+                            send_message(driver, listing_url, message, cookies)
+                            print("messaged from here")
+
+                            message_payload = {
+                                'product_url': listing_url,
+                                'messenger_link': listing_url,
+                                'recent_message': message
+
+                            }
+                            messagesTable.put_item(Item=message_payload)
+                            print("recent data inputted in the DB")
+
+                            #email business
+
+                            SENDER_EMAIL = os.getenv("SENDER_EMAIL")
+                            SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
+                            RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL")
+                            SUBJECT = "🟢 STARTED CONVERSATION"
+                            BODY = f"I just started a conversation for a ${title} for ${price}. Track the conversation here: ${listing_url}"
+
+                            send_email(SENDER_EMAIL, SENDER_PASSWORD, RECIPIENT_EMAIL, SUBJECT, BODY)
+                            print("business email successfully")
+
+                        else:
+                            print(f"Will not insert {title} as it does not meet reqs")
+
+                    except Exception as e:
+                        print("could not insert into listing DB", str(e))
+                            
                     
             #driver.quit()
         return

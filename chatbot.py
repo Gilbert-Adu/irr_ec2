@@ -1,31 +1,10 @@
-import torch # type: ignore
-from transformers import BertTokenizer, BertModel # type: ignore
-
 import boto3 # type: ignore
-from sklearn.metrics.pairwise import cosine_similarity # type: ignore
-import numpy as np
-import time
-from bs4 import BeautifulSoup # type: ignore
-from csv import DictReader
+import difflib
 from emailer import send_email
 
 
-from selenium import webdriver  # type: ignore
-from selenium.webdriver.common.by import By # type: ignore
-from selenium.webdriver.common.keys import Keys # type: ignore
-from selenium.webdriver.support.ui import WebDriverWait # type: ignore
-from selenium.webdriver.firefox.options import Options # type: ignore
-from selenium.webdriver.support import expected_conditions as EC # type: ignore
-
-import platform
 import os
-from pathlib import Path
 from dotenv import load_dotenv # type: ignore
-
-
-
-tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-model = BertModel.from_pretrained('bert-base-uncased')
 
 
 load_dotenv()
@@ -33,7 +12,15 @@ load_dotenv()
 
 
 
-dynamodb = boto3.resource('dynamodb',
+dynamodb_client = boto3.client('dynamodb',
+
+                          region_name=os.getenv("REGION_NAME"),
+                          aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+                          aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
+                         
+                          )
+
+dynamodb_resource = boto3.resource('dynamodb',
 
                           region_name=os.getenv("REGION_NAME"),
                           aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
@@ -43,7 +30,10 @@ dynamodb = boto3.resource('dynamodb',
 
 
 
-table = dynamodb.Table('ChatbotTrainingData')
+
+table = dynamodb_resource.Table('ChatbotTrainingData') #use resource
+table_name = "ChatbotTrainingData"
+
 #----train bot functions
 def load_training_data():
     response = table.scan()
@@ -54,17 +44,29 @@ def load_training_data():
         questions_answers[question] = answer
     return questions_answers
 
-def get_embedding(text):
-    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=512)
-    with torch.no_grad():
-        outputs = model(**inputs)
-    return outputs.last_hidden_state[:, 0, :].numpy()
-
 
     
-def get_response(user_input, chat_link, questions_answers=load_training_data()):
+def fetch_questions_from_dynamodb():
+    try:
+        response = dynamodb_client.scan(TableName=table_name)
+        items = response.get('Items', [])
+        questions = [item['question']['S'] for item in items]
+        return items, questions
+    except Exception as e:
+        print(f"Error fetching questions from DynamoDB: {e}")
+        return [], []
 
+def find_closest_question(user_input, questions):
+    closest_matches = difflib.get_close_matches(user_input, questions, n=1, cutoff=0.4)
+    return closest_matches[0] if closest_matches else None
 
+def get_answer_from_dynamodb(question, items):
+    for item in items:
+        if item['question']['S'] == question:
+            return item['answer']['S']
+    return "Sorry, I couldn't find an answer to your question"
+
+def get_response(user_input, chat_link):
     if user_input != None or user_input != '':
             SENDER_EMAIL = os.getenv("SENDER_EMAIL")
             SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
@@ -72,26 +74,26 @@ def get_response(user_input, chat_link, questions_answers=load_training_data()):
             SUBJECT = "🔴 COULD NOT ANSWER A CLIENT QUESTION"
             BODY = f"Hi there, \n On Facebook Marketplace, a client said, {user_input} and I did not know how to respond. \n Here's a link to the chat: {chat_link} Thanks,\n Your Friendly Bot."
             send_email(SENDER_EMAIL, SENDER_PASSWORD, RECIPIENT_EMAIL, SUBJECT, BODY)
+
     else:
-        user_embedding = get_embedding(user_input)
-        best_match = None
-        best_score = -1
-        best_question = ""
+        items, questions = fetch_questions_from_dynamodb()
+        closest_question = find_closest_question(user_input, questions)
+        if closest_question:
+            answer = get_answer_from_dynamodb(closest_question, items)
+            return answer
+        else:
+            SENDER_EMAIL = os.getenv("SENDER_EMAIL")
+            SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
+            RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL")
+            SUBJECT = "🎗️ HELP -- CONTINUE CONVERSATION"
+            BODY = f"I did not understand something a client said. \n Can you help? User said: {user_input}. \n Here's a link to the chat: {chat_link} \n Thanks,\n Your Friendly Bot."
+            send_email(SENDER_EMAIL, SENDER_PASSWORD, RECIPIENT_EMAIL, SUBJECT, BODY)
 
-        for question, answer in questions_answers.items():
-            question_embedding = get_embedding(question)
-            similarity = cosine_similarity(user_embedding, question_embedding)[0][0]
+            return "Ugghhh...give me a sec"
 
-            if similarity > best_score:
-                best_score = similarity
-                best_match = answer
-                best_question = question
-
-        if best_score > 0.8:
-            return best_match
-        
-        
-        #https://security.google.com/settings/security/apppasswords
+#get_response("can we meet at the community park?")
+      
+#https://security.google.com/settings/security/apppasswords
         
 
         

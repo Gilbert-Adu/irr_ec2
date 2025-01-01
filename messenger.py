@@ -1,7 +1,4 @@
-from transformers import BertTokenizer, BertModel # type: ignore
 import boto3 # type: ignore
-from sklearn.metrics.pairwise import cosine_similarity # type: ignore
-import numpy as np
 import time
 from bs4 import BeautifulSoup # type: ignore
 from csv import DictReader
@@ -11,7 +8,6 @@ from io import StringIO
 import csv
 from chatbot import get_response
 import random
-from misc import get_all_listings
 
 
 
@@ -36,6 +32,30 @@ from dotenv import load_dotenv # type: ignore
 
 load_dotenv()
 
+#s3 bucket
+s3 = boto3.client('s3',
+
+                region_name=os.getenv("REGION_NAME"),
+                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+                aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
+                         
+                         
+            )
+BUCKET_NAME='qkr'
+CSV_FILE_KEY='gil_qkr.csv'
+#gil_qkr.csv
+
+response = s3.get_object(Bucket=BUCKET_NAME, Key=CSV_FILE_KEY)
+csv_content = response['Body'].read().decode('utf-8')
+
+#read cookies from csv content
+cookies = []
+csv_reader = csv.DictReader(StringIO(csv_content))
+cookies = [
+    {'name': row['\ufeffname'], 'value': row['value'], 'domain': row['domain']}
+    for row in csv_reader
+]
+
 dynamodb = boto3.resource('dynamodb',
                           region_name=os.getenv("REGION_NAME"),
                           aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
@@ -48,40 +68,79 @@ matchedListingsTable = dynamodb.Table('ListingsData')
 messagesTable = dynamodb.Table('MessagesData')
 
 
-def all_ongoing_texts_with_client(driver, profile_url, cookies):
+def all_ongoing_texts_with_client(driver, match_url, cookies):
 
     
   
     driver.implicitly_wait(10)  # Wait up to 10 seconds for elements to load
-    driver.get(profile_url)
+    driver.get(match_url)
     driver.delete_all_cookies()
     for cookie in cookies:
         driver.add_cookie(cookie)
+    print("cookies added in all_ongoing_texts")
     driver.refresh()
 
-    all_texts = driver.find_elements(By.XPATH, '//div[@dir="auto"]')
-    #print("length of all_texts: ", len([i.text for i in all_texts]))
-    #print('all_texts: ', [i.text for i in all_texts])
-    curr_texts = [i.text for i in all_texts]
+    #message button label -- Message or Message Again
+    messageLabel = WebDriverWait(driver, 30).until(
+            EC.visibility_of_element_located((By.XPATH, '//div[@aria-label="Message" or @aria-label="Message Again"]'))
+            )
+    #if convo already ongoing
+    if messageLabel.get_attribute("aria-label") == "Message Again":
+        driver.execute_script("arguments[0].click();", messageLabel)
+        #check ongoing texts
+        all_texts = driver.find_elements(By.XPATH, '//div[@dir="auto"]')
+        curr_texts = [i.text for i in all_texts]
+        most_recent_message = curr_texts[-1]
+        return most_recent_message
+    #if first convo
+    else:
+        return ""
 
-    return "" if curr_texts == [] else curr_texts[-1]
 
-def get_first_message(title, URL, price):
+def get_first_message(title, URL,price, minPrice, maxPrice):
 
-    first_messages = [
-                            f"Hello, I hope you’re having a good day. Just saw that you're selling {title}  on marketplace {URL}. I can come pick this up and pay you ${price} in cash.",
-                            f"Hello, just saw that you're selling a {title}  on marketplace {URL}. I can pay you ${price} in cash and come pick it up.",
-                            f"Hey, just saw that you're selling a {title} on marketplace {URL}. I can come pick this up and pay you ${price} in cash.",
-                            f"Hi, just saw that you're selling {title}  on marketplace {URL}. I could pay you up to ${price} in cash and I could come pick it up.",
-                            f"Hi, just saw that you're selling {title}  on marketplace {URL}. I can come pick this phone up for ${price} in cash asap. Where are you located?",
-                            f"Just saw that you're selling {title}  on marketplace {URL}. Can I please come pickup for ${price}?",
-                            f"Just saw that you're selling {title}  on marketplace {URL}. I can pickup for ${price}in cash.",
-                            f"Just saw that you're selling {title}  on marketplace {URL}. Would you do ${price} in cash?",
-                            f"Just saw that you're selling {title}  on marketplace {URL}. I can pay the full ${price} in cash. What's a good meetup spot for you?",
-                            f"Just saw that you're selling {title}  on marketplace {URL}. Let's do the ${price} in cash. Where are you located?"
+    if '.' in str(price):
+        temp = str(price).split('.')[0]
+    else:
+        temp = str(price)
 
-            ]
-    return random.choice(first_messages)
+    if len(temp) < 3:
+        price = min(int(price), int(maxPrice))
+
+        first_messages = [
+                                f"Hello, I hope you’re having a good day. can I come pick this up and pay you ${price} in cash?",
+                                f"Hello, I'd like to pay ${price} in cash. can I come pick it up?",
+                                f"I can come pick this up and pay you ${price} in cash.",
+                                f"I could pay you up to ${price} in cash and I could come pick it up.",
+                                f"I can come pick this phone up for ${price} in cash asap. Where are you located?",
+                                f"Can I please come pickup for ${price}? where and when can we meet?",
+                                f"I can pickup for ${price}in cash. When and where can we meet?",
+                                f"Would you do ${price} in cash?",
+                                f"I can pay the full ${price} in cash. What's a good meetup spot for you?",
+                                f"Hi, can we do ${price} in cash. Where are you located?"
+
+                ]
+        return random.choice(first_messages)
+    else:
+
+        if int(price) > int(minPrice) and int(price) <= int(maxPrice):
+
+            price = min(int(maxPrice), int(price))
+
+            first_messages = [
+                                f"Hello, I hope you’re having a good day. can I come pick this up and pay you ${price} in cash?",
+                                f"Hello, I'd like to pay ${price} in cash. can I come pick it up?",
+                                f"I can come pick this up and pay you ${price} in cash.",
+                                f"I could pay you up to ${price} in cash and I could come pick it up.",
+                                f"I can come pick this phone up for ${price} in cash asap. Where are you located?",
+                                f"Can I please come pickup for ${price}? where and when can we meet?",
+                                f"I can pickup for ${price}in cash. When and where can we meet?",
+                                f"Would you do ${price} in cash?",
+                                f"I can pay the full ${price} in cash. What's a good meetup spot for you?",
+                                f"Hi, can we do ${price} in cash. Where are you located?"
+
+                ]
+            return random.choice(first_messages)
 temp = [
 "Come meet me here", "Address",
 "Can you meet me in","How far are you from",
@@ -146,11 +205,11 @@ def get_profile_id(driver, match_url, cookies):
         #print("current_url: ", driver.current_url)
         #print("match_url: ", match_url)
         #print("profile_links: ", profile_links)
-        profile_id = profile_links[1].split('/')[3]
-        messenger_link = "https://www.facebook.com/messages/t/" + profile_id
+        #profile_id = profile_links[1].split('/')[3]
+        #messenger_link = "https://www.facebook.com/messages/t/" + profile_id
 
 
-        return messenger_link
+        #return messenger_link
     except Exception as e:
         print("error getting profile id: ", str(e))
 
@@ -165,6 +224,9 @@ def get_recent_message_from_db(match_url):
 
         response_value = response['Item']['recent_message']
 
+        if response['Item'] == None:
+            return ""
+
         if 'Item' in response and response_value != None:
             return response['Item']['recent_message']
         return ""
@@ -174,36 +236,71 @@ def get_recent_message_from_db(match_url):
     except Exception as e:
         print("Could not find recent message: ", str(e))
 
-def send_message(driver, profile_url, message, cookies):
+def send_message(driver, match_url, message, cookies):
 
     try:
 
        
 
         driver.implicitly_wait(10)  # Wait up to 10 seconds for elements to load
-        driver.execute_script("window.open('');")
-        driver.switch_to.window(driver.window_handles[1])
 
-        driver.get(profile_url)
+        #visit match url
+        driver.get(match_url)
+
+        #delete cookies
         driver.delete_all_cookies()
+
+        #add cookies
         for cookie in cookies:
             driver.add_cookie(cookie)
         driver.refresh()
-        #log in to message url
 
-        #send message
-        messageInput = driver.find_element(By.XPATH, '//div[@aria-label="Message"]')
-        messageInput.click()
+        try:
+            messageLabel = WebDriverWait(driver, 30).until(
+            EC.visibility_of_element_located((By.XPATH, '//div[@aria-label="Message" or @aria-label="Message Again"]'))
+            )
+
+            if messageLabel.get_attribute("aria-label") == "Message":
+                #click message button to get text area
+                messageLabel.click()
+                
+                textarea = driver.find_element(By.XPATH, "//textarea[contains(@class, 'x1i10hfl xggy1nq x1s07b3s xjbqb8w x1ejq31n xd10rxx x1sy0etr x17r0tee x9f619 xzsf02u x78zum5 x1jchvi3 x1fcty0u x1a2a7pz x6ikm8r x1pi30zi x1swvt13 xtt52l0 xh8yej3 x1ls7aod xcrlgei x1byulpo x1agbcgv x15bjb6t')]")  # Replace with your class
+                textarea.clear()  # Optional: Clears any existing text
+                textarea.send_keys(message)
+
+                #click send button to send message
+                send_button = driver.find_element(By.XPATH, '//div[@aria-label="Send message"]')
+                send_button.click()
+                print("first message sent")
+
+            elif messageLabel.get_attribute("aria-label") == 'Message Again':
+                driver.execute_script("arguments[0].click();", messageLabel)
+                
+                #input message
+                
+                messagebar = driver.find_element(By.XPATH, '//div[@aria-label="Message"]')
+                messagebar.click()
+                print("message again clicked")
 
 
-        if message != None or message != "":
+                if message != None or message != "":
 
-            for i in message:
-                messageInput.send_keys(i)
-            messageInput.send_keys(Keys.RETURN)
-            print(f"message sent successfully to {profile_url}")
+                    for i in message:
+                        messagebar.send_keys(i)
+                    messagebar.send_keys(Keys.RETURN)
+                    print(f"reply sent successfully")
+
+
+
+
+
+
+
+        except Exception as e:
+            print("Could not send message: ", str(e))
+
     except Exception as e:
-        print(f"Error sending message to {profile_url}: ", str(e))
+        print(f"Error sending message for the item: {match_url}: ", str(e))
 
 
 def message_clients_helper(driver, listings, cookies):
@@ -216,62 +313,32 @@ def message_clients_helper(driver, listings, cookies):
                 match_url = match['listing_url']
                 price = match['price']
                 title = match['title']
+                maxPrice = match['maxPrice']
+                minPrice = match['minPrice']
 
 
 
-                profile_id = get_profile_id(driver, match_url, cookies)
-                recent_message = all_ongoing_texts_with_client(driver, profile_id, cookies)
+                #profile_id = get_profile_id(driver, match_url, cookies)
+                recent_message = all_ongoing_texts_with_client(driver, match_url, cookies)
 
                 if get_recent_message_from_db(match_url) == "end":
                     SENDER_EMAIL = os.getenv("SENDER_EMAIL")
                     SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
                     RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL")
                     SUBJECT = "🤝 AGREEMENT MADE"
-                    BODY = f"I just reached an agreement with a seller. Check it out here: {profile_id}"
+                    BODY = f"I just reached an agreement with a seller. Check it out here: {match_url}"
 
                     send_email(SENDER_EMAIL, SENDER_PASSWORD, RECIPIENT_EMAIL, SUBJECT, BODY)
 
-
-                #if first message
-                if recent_message == "":
-                    first_message = get_first_message(title, match_url, price)
-                    send_message(driver, profile_id, first_message, cookies)
-                    #update recent message in DB
-                    message_payload = {
-                        'product_url': match_url,
-                        'messenger_link': profile_id,
-                        'recent_message': first_message
-
-                    }
-                    messagesTable.put_item(Item=message_payload)
-                    """
-                        messagesTable.update_item(
-                        Key={'product_url': match_url},
-                        UpdateExpression="SET recent_message = :val",
-                        ExpressionAttributeValues={':val': first_message},
-                        ReturnValues="UPDATED_NEW"
-                    )
-                    """
-                    #UPDATE RECENT MESSAGE VARIABLE HERE
-                    recent_message = first_message
-
-                    #send email to business
-                    SENDER_EMAIL = os.getenv("SENDER_EMAIL")
-                    SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
-                    RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL")
-                    SUBJECT = "🟢 STARTED CONVERSATION"
-                    BODY = f"I just started a conversation for a ${title} for ${price}. Track the conversation here: ${profile_id}"
-
-                    send_email(SENDER_EMAIL, SENDER_PASSWORD, RECIPIENT_EMAIL, SUBJECT, BODY)
 
 
                 #recent_message gets most recent message between two parties
-                message_from_client = all_ongoing_texts_with_client(driver, profile_id, cookies)
+                message_from_client = all_ongoing_texts_with_client(driver, match_url, cookies)
                 if message_from_client != get_recent_message_from_db(match_url) and get_recent_message_from_db(match_url) != "":
                     #get response from bot
-                    bot_reply = get_response(message_from_client, profile_id)
+                    bot_reply = get_response(message_from_client, match_url)
                     #send message
-                    send_message(driver, profile_id, bot_reply, cookies)
+                    send_message(driver, match_url, bot_reply, cookies)
                     #update recent_message in db
                     messagesTable.update_item(
                         Key={'product_url': match_url},
@@ -291,7 +358,7 @@ def message_clients_helper(driver, listings, cookies):
                     
 
             except Exception as e:
-                print(f"Error checking status for {profile_id} with a message: ", str(e))
+                print(f"Error checking status for {match_url} with a message: ", str(e))
 
     except Exception as e:
         print("Error occurred: ", str(e))
